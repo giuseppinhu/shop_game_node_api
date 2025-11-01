@@ -3,6 +3,9 @@ const app = express();
 const port = 4040;
 
 const cors = require("cors");
+const JWT = require("jsonwebtoken");
+
+const JWTSecret = "hjskahfdljshsajdkçlasasdfa";
 
 app.use(cors());
 
@@ -15,6 +18,21 @@ const bodyParser = require("body-parser");
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
+const DB = {
+  users: [
+    {
+      id: 2,
+      email: "teste@gmail.com",
+      password: "123456",
+    },
+    {
+      id: 15,
+      email: "admin@teste.com",
+      password: "admin1",
+    },
+  ],
+};
+
 connection
   .authenticate()
   .then(() => {
@@ -24,8 +42,31 @@ connection
     console.log(`Ocorreu um error: ${err}`);
   });
 
+const auth = (req, res, next) => {
+  const authToken = req.headers["authorization"];
+
+  if (authToken != undefined) {
+    const bearer = authToken.split(" ");
+    const token = bearer[1];
+
+    JWT.verify(token, JWTSecret, (error, data) => {
+      if (error) {
+        res.status(401);
+        res.json({ error: "Token Inválido!" });
+      } else {
+        req.token = token;
+        req.loggedUser = { id: data.id, email: data.email };
+        next();
+      }
+    });
+  } else {
+    res.status(401);
+    res.json({ error: "Token Inválido!" });
+  }
+};
+
 // ROUTE GET
-app.get("/games", (req, res) => {
+app.get("/games", auth, (req, res) => {
   res.statusCode = 200;
   Game.findAll().then((games) => {
     res.json(games);
@@ -33,7 +74,7 @@ app.get("/games", (req, res) => {
 });
 
 // ROUTE GET FIND ID
-app.get("/game/:id", (req, res) => {
+app.get("/game/:id", auth, (req, res) => {
   if (isNaN(req.params.id)) {
     res.sendStatus(400);
   } else {
@@ -55,7 +96,7 @@ app.get("/game/:id", (req, res) => {
 });
 
 // ROUTE CREATE
-app.post("/game", (req, res) => {
+app.post("/game", auth, (req, res) => {
   var { title, year, price } = req.body;
 
   Game.create({
@@ -72,7 +113,7 @@ app.post("/game", (req, res) => {
 });
 
 // ROUTE DELETE
-app.delete("/game/:id", (req, res) => {
+app.delete("/game/:id", auth, (req, res) => {
   if (isNaN(req.params.id)) {
     res.sendStatus(400);
   } else {
@@ -93,7 +134,7 @@ app.delete("/game/:id", (req, res) => {
 });
 
 // ROUTE EDIT
-app.put("/game/:id", (req, res) => {
+app.put("/game/:id", auth, (req, res) => {
   if (isNaN(req.params.id)) {
     res.sendStatus(400);
   } else {
@@ -119,6 +160,49 @@ app.put("/game/:id", (req, res) => {
         res.sendStatus(200);
       }
     });
+  }
+});
+
+app.post("/auth", (req, res) => {
+  var { email, password } = req.body;
+
+  if (email != undefined) {
+    var user = DB.users.find((user) => user.email === email);
+
+    if (user != undefined) {
+      if (password != undefined) {
+        if (user.password == password) {
+          JWT.sign(
+            { id: user.id, email: user.email },
+            JWTSecret,
+            {
+              expiresIn: "48h",
+            },
+            (error, token) => {
+              if (error) {
+                res.status(401);
+                res.json({ error: "Erro interno." });
+              } else {
+                res.status(200);
+                res.json({ token: token });
+              }
+            }
+          );
+        } else {
+          res.status(401);
+          res.json({ error: "Senha não Autorizada!" });
+        }
+      } else {
+        res.status(404);
+        res.json({ error: "Senha Inválida!" });
+      }
+    } else {
+      res.status(404);
+      res.json({ error: "Email não encontrado!" });
+    }
+  } else {
+    res.status(400);
+    res.json({ error: "Email Inválido" });
   }
 });
 
